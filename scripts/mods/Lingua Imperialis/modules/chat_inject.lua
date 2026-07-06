@@ -6,9 +6,11 @@
     Repository:
 ]]--
 
+local string_find = string.find
+
 local M = {}
 
-local ARROW = "\226\164\183"
+local MARKER = "->"
 
 function M.append(chat_element, log_index, original_text, translated, tag_label)
 	if not chat_element or not log_index or not original_text or not translated or translated == "" then
@@ -41,24 +43,24 @@ function M.append(chat_element, log_index, original_text, translated, tag_label)
 		return false
 	end
 
-	if string.sub(original, 1, #original_text) ~= original_text then
+	if not string_find(original, original_text, 1, true) then
 		return false
 	end
 
-	if string.find(original, ARROW, 1, true) then
+	if string_find(original, "\n", 1, true) then
 		return false
 	end
 
-	local tag = tag_label
-	if not tag or tag == "" then
-		tag = "??"
+	local combined
+	if tag_label and tag_label ~= "" then
+		combined = original .. "\n" .. MARKER .. " [" .. tag_label .. "] " .. translated
+	else
+		combined = original .. "\n" .. MARKER .. " " .. translated
 	end
-
-	local combined = original .. "\n" .. ARROW .. " [" .. tag .. "] " .. translated
 
 	content.message = combined
 	content.message_format = combined
-	entry.message_text = (entry.message_text or "") .. " " .. ARROW .. " " .. translated
+	entry.message_text = (entry.message_text or "") .. " " .. MARKER .. " " .. translated
 	content.size = nil
 
 	return true

@@ -11,8 +11,12 @@ local mod = get_mod("Lingua Imperialis")
 local M = {}
 
 M.cache = {
+	download_model = false,
+	download_model_large = false,
 	enabled = true,
 	target_iso = "en",
+	provider = "mymemory",
+	mymemory_email = "",
 	channels = {
 		HUB = true,
 		MISSION = true,
@@ -29,10 +33,18 @@ local function get_bool(id, fallback)
 end
 
 function M.refresh()
+	M.cache.download_model = get_bool("download_model", false)
+	M.cache.download_model_large = get_bool("download_model_large", false)
 	M.cache.enabled = get_bool("enabled", true)
 
 	local iso = mod:get("target_language")
 	M.cache.target_iso = (type(iso) == "string" and iso ~= "" and iso) or "en"
+
+	local email = mod:get("mymemory_email")
+	M.cache.mymemory_email = (type(email) == "string" and email) or ""
+
+	local provider = mod:get("provider")
+	M.cache.provider = (type(provider) == "string" and provider ~= "" and provider) or "mymemory"
 
 	local ch = M.cache.channels
 	ch.HUB = get_bool("channel_hub", true)

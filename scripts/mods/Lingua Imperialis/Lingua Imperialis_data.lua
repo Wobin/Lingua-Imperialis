@@ -1,5 +1,11 @@
 local mod = get_mod("Lingua Imperialis")
 
+local provider_options = {
+	{ text = "provider_mymemory", value = "mymemory" },
+	{ text = "provider_google", value = "google" },
+	{ text = "provider_offline", value = "offline" }
+}
+
 local language_options = {
 	{ text = "lang_en", value = "en" },
 	{ text = "lang_de", value = "de" },
@@ -26,11 +32,28 @@ return {
 
 	options = {
 		widgets = {
+			
 			{
 				setting_id = "enabled",
 				type = "checkbox",
 				default_value = true,
 			},
+			{
+				setting_id = "provider",
+				type = "dropdown",
+				default_value = "mymemory",
+				options = provider_options,
+			},
+			{
+				setting_id = "download_model",
+				type = "checkbox",
+				default_value = false,
+			},
+			{
+				setting_id = "download_model_large",
+				type = "checkbox",
+				default_value = false,
+			},			
 			{
 				setting_id = "target_language",
 				type = "dropdown",
