@@ -1,0 +1,8 @@
+{
+	"name": "Lingua Imperialis",
+	"order": {
+		"require": ["dmf"],
+		"this_after": ["dmf"],
+		"this_before": []
+	}
+}

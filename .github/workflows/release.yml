@@ -1,0 +1,51 @@
+name: Release Lingua Imperialis
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to upload (e.g. 1.2.0)
+        required: true
+
+jobs:
+  package-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set version
+        run: echo "VERSION=${{ github.event.release.tag_name || inputs.version }}" >> "$GITHUB_ENV"
+
+      - name: Package (no git artefacts)
+        run: |
+          git archive --format=zip --prefix="Lingua Imperialis/" \
+            -o "Lingua-Imperialis-${VERSION}.zip" HEAD
+
+      - name: Verify zip contents
+        run: |
+          unzip -l "Lingua-Imperialis-${VERSION}.zip"
+          if unzip -l "Lingua-Imperialis-${VERSION}.zip" | grep -E '\.git|\.github'; then
+            echo "Git artefacts found in zip" && exit 1
+          fi
+          unzip -l "Lingua-Imperialis-${VERSION}.zip" | grep -q 'Lingua Imperialis/Lingua Imperialis.mod' \
+            || { echo "Missing Lingua Imperialis.mod" && exit 1; }
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Lingua-Imperialis-${{ env.VERSION }}
+          path: Lingua-Imperialis-${{ env.VERSION }}.zip
+
+      - name: Upload to Nexus Mods
+        if: ${{ !github.event.release.prerelease }}
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.8
+        with:
+          api_key: ${{ secrets.NEXUSMODS_APIKEY }}
+          file_id: ${{ vars.NEXUS_FILE_ID }}
+          filename: Lingua-Imperialis-${{ env.VERSION }}.zip
+          version: ${{ env.VERSION }}
+          display_name: Lingua Imperialis ${{ env.VERSION }}
+          category: main
+          description: ${{ github.event.release.body }}
