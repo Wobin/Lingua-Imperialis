@@ -8,10 +8,19 @@
 
 local string_find   = string.find
 local string_upper  = string.upper
+local string_lower  = string.lower
+local string_gsub   = string.gsub
 local string_format = string.format
 local math_floor    = math.floor
 
 local M = {}
+
+local function normalize(s)
+	s = string_lower(s)
+	s = string_gsub(s, "^%s+", "")
+	s = string_gsub(s, "%s+$", "")
+	return s
+end
 
 local MARKER = "->"
 
@@ -57,6 +66,10 @@ end
 
 function M.append(chat_element, log_index, original_text, translated, tag_label)
 	if not chat_element or not log_index or not original_text or not translated or translated == "" then
+		return false
+	end
+
+	if normalize(original_text) == normalize(translated) then
 		return false
 	end
 

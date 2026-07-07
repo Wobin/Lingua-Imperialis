@@ -1,13 +1,13 @@
 --[[
     Name: Lingua Imperialis
     Author: Wobin
-    Date: 2026-07-06
-    Version: 1.0.0
+    Date: 2026-07-08
+    Version: 1.1.0
     Repository:
 ]]--
 
 local mod = get_mod("Lingua Imperialis")
-mod.version = "1.0.0"
+mod.version = "1.1.0"
 
 local translator      = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/translator")
 local chat_inject     = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/chat_inject")
@@ -114,6 +114,25 @@ local function is_own(self, sender, channel)
 	return ok and own == sender
 end
 
+local COM_WHEEL_KEYS = {
+	"loc_communication_wheel_need_ammo",
+	"loc_communication_wheel_need_health",
+	"loc_communication_wheel_thanks",
+}
+
+local function build_com_wheel_filter()
+	mod._com_wheel_filter = {}
+	if not Localize then
+		return
+	end
+	for i = 1, #COM_WHEEL_KEYS do
+		local ok, s = pcall(Localize, COM_WHEEL_KEYS[i])
+		if ok and type(s) == "string" and s ~= "" then
+			mod._com_wheel_filter[s] = true
+		end
+	end
+end
+
 
 function mod._on_incoming(chat_element, text, log_index, channel_tag)
 	if not text or text == "" then
@@ -121,6 +140,10 @@ function mod._on_incoming(chat_element, text, log_index, channel_tag)
 	end
 
 	if not settings.cache.enabled then
+		return
+	end
+
+	if mod._com_wheel_filter and mod._com_wheel_filter[text] then
 		return
 	end
 
@@ -281,6 +304,7 @@ function mod.on_all_mods_loaded()
 	mod._target_iso = settings.cache.target_iso or "en"
 
 	Localize = Managers.localization and function(...) return Managers.localization:localize(...) end or nil
+	build_com_wheel_filter()
 
 	local chat_hook_ok = pcall(function()
 		mod:hook_safe(require(CHAT_ELEMENT_PATH), "_add_message", function(self, message, sender, channel)
