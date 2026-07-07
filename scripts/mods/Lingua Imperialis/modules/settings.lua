@@ -16,6 +16,7 @@ M.cache = {
 	enabled = true,
 	target_iso = "en",
 	provider = "mymemory",
+	translation_rgb = { 106, 190, 48 },
 	mymemory_email = "",
 	channels = {
 		HUB = true,
@@ -45,6 +46,14 @@ function M.refresh()
 
 	local provider = mod:get("provider")
 	M.cache.provider = (type(provider) == "string" and provider ~= "" and provider) or "mymemory"
+
+	local rgb = M.cache.translation_rgb
+	local defaults = { 106, 190, 48 }
+	local ids = { "translation_colour_R", "translation_colour_G", "translation_colour_B" }
+	for i = 1, 3 do
+		local v = mod:get(ids[i])
+		rgb[i] = (type(v) == "number") and v or defaults[i]
+	end
 
 	local ch = M.cache.channels
 	ch.HUB = get_bool("channel_hub", true)

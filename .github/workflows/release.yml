@@ -13,7 +13,7 @@ jobs:
   package-and-upload:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
 
       - name: Set version
         run: echo "VERSION=${{ github.event.release.tag_name || inputs.version }}" >> "$GITHUB_ENV"
@@ -33,7 +33,7 @@ jobs:
             || { echo "Missing Lingua Imperialis.mod" && exit 1; }
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: Lingua-Imperialis-${{ env.VERSION }}
           path: Lingua-Imperialis-${{ env.VERSION }}.zip

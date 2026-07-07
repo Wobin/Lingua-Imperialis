@@ -6,11 +6,54 @@
     Repository:
 ]]--
 
-local string_find = string.find
+local string_find   = string.find
+local string_upper  = string.upper
+local string_format = string.format
+local math_floor    = math.floor
 
 local M = {}
 
 local MARKER = "->"
+
+local DEFAULT_RGB = { 106, 190, 48 }
+
+local function clamp255(n)
+	n = math_floor((type(n) == "number" and n or 0) + 0.5)
+	if n < 0 then
+		return 0
+	elseif n > 255 then
+		return 255
+	end
+	return n
+end
+
+local function build_prefix(r, g, b)
+	return string_format("{# color(%d,%d,%d,255)}", clamp255(r), clamp255(g), clamp255(b))
+end
+
+local color_prefix = build_prefix(DEFAULT_RGB[1], DEFAULT_RGB[2], DEFAULT_RGB[3])
+
+function M.set_color(rgb)
+	if type(rgb) == "table" then
+		color_prefix = build_prefix(rgb[1], rgb[2], rgb[3])
+	else
+		color_prefix = build_prefix(DEFAULT_RGB[1], DEFAULT_RGB[2], DEFAULT_RGB[3])
+	end
+end
+
+local function build_body(translated, tag_label)
+	if tag_label and tag_label ~= "" then
+		return MARKER .. " [" .. string_upper(tag_label) .. "] " .. translated
+	end
+	return MARKER .. " " .. translated
+end
+
+function M.format(translated, tag_label)
+	if not translated or translated == "" then
+		return ""
+	end
+	return color_prefix .. build_body(translated, tag_label) .. "{#reset()}"
+end
 
 function M.append(chat_element, log_index, original_text, translated, tag_label)
 	if not chat_element or not log_index or not original_text or not translated or translated == "" then
@@ -51,16 +94,12 @@ function M.append(chat_element, log_index, original_text, translated, tag_label)
 		return false
 	end
 
-	local combined
-	if tag_label and tag_label ~= "" then
-		combined = original .. "\n" .. MARKER .. " [" .. tag_label .. "] " .. translated
-	else
-		combined = original .. "\n" .. MARKER .. " " .. translated
-	end
+	local body = build_body(translated, tag_label)
+	local combined = original .. "\n" .. color_prefix .. body .. "{#reset()}"
 
 	content.message = combined
 	content.message_format = combined
-	entry.message_text = (entry.message_text or "") .. " " .. MARKER .. " " .. translated
+	entry.message_text = (entry.message_text or "") .. " " .. body
 	content.size = nil
 
 	return true

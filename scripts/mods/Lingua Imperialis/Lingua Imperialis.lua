@@ -166,7 +166,7 @@ end
 
 local function online_on_result(element, idx, original, translated, src)
 	if element == mod._TEST then
-		mod:echo(string.format("%s -> %q", settings.cache.provider or "online", translated))
+		mod:echo(chat_inject.format(translated, src_to_tag(src)))
 		return
 	end
 	local tag = src_to_tag(src)
@@ -223,7 +223,7 @@ function mod.update(dt)
 				if p then
 					if p.test then
 						if status == 1 and txt and txt ~= "" then
-							mod:echo(string.format("%s -> %q", src_iso or "?", txt))
+							mod:echo(chat_inject.format(txt, src_iso))
 						elseif status == 2 then
 							mod:echo(string.format("detected %q, skipped (%s)", src_iso or "?", (txt ~= "" and txt) or "same language / unmapped"))
 						elseif status == -1 then
@@ -277,6 +277,7 @@ function mod.on_all_mods_loaded()
 	mod:info(mod.version)
 
 	settings.refresh()
+	chat_inject.set_color(settings.cache.translation_rgb)
 	mod._target_iso = settings.cache.target_iso or "en"
 
 	Localize = Managers.localization and function(...) return Managers.localization:localize(...) end or nil
@@ -341,6 +342,7 @@ end
 
 function mod.on_setting_changed(id)
 	settings.refresh()
+	chat_inject.set_color(settings.cache.translation_rgb)
 	mod._target_iso = settings.cache.target_iso or "en"
 
 	if id == "provider" and settings.cache.provider == "offline" and not mod._offline_ready then

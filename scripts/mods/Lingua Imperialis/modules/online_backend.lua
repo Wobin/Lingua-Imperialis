@@ -75,15 +75,15 @@ local function parse_response(body)
     local status = tonumber(decoded.responseStatus)
     local quota = decoded.quotaFinished == true
     local translated = nil
-    local data = decoded.responseData
-    if type(data) == "table" and type(data.translatedText) == "string" then
-        translated = data.translatedText
-    end
     local src = nil
-    local matches = decoded.matches
-    if type(matches) == "table" and type(matches[1]) == "table"
-        and type(matches[1].source) == "string" then
-        src = matches[1].source
+    local data = decoded.responseData
+    if type(data) == "table" then
+        if type(data.translatedText) == "string" then
+            translated = data.translatedText
+        end
+        if type(data.detectedLanguage) == "string" then
+            src = data.detectedLanguage
+        end
     end
     return translated, status, quota, src
 end
