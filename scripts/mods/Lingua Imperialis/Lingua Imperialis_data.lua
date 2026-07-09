@@ -67,6 +67,23 @@ return {
 				},
 			},
 			{
+				setting_id = "outgoing_group",
+				type = "group",
+				sub_widgets = {
+					{
+						setting_id = "outgoing_enabled",
+						type = "checkbox",
+						default_value = false,
+					},
+					{
+						setting_id = "outgoing_language",
+						type = "dropdown",
+						default_value = "en",
+						options = language_options,
+					},
+				},
+			},
+			{
 				setting_id = "translation_colour",
 				type = "group",
 				sub_widgets = {

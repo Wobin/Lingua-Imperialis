@@ -15,6 +15,8 @@ M.cache = {
 	download_model_large = false,
 	enabled = true,
 	target_iso = "en",
+	outgoing_enabled = false,
+	outgoing_iso = "en",
 	provider = "mymemory",
 	translation_rgb = { 106, 190, 48 },
 	mymemory_email = "",
@@ -40,6 +42,11 @@ function M.refresh()
 
 	local iso = mod:get("target_language")
 	M.cache.target_iso = (type(iso) == "string" and iso ~= "" and iso) or "en"
+
+	M.cache.outgoing_enabled = get_bool("outgoing_enabled", false)
+
+	local out_iso = mod:get("outgoing_language")
+	M.cache.outgoing_iso = (type(out_iso) == "string" and out_iso ~= "" and out_iso) or "en"
 
 	local email = mod:get("mymemory_email")
 	M.cache.mymemory_email = (type(email) == "string" and email) or ""

@@ -15,6 +15,7 @@ local settings        = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imp
 local model_fetch     = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/model_fetch")
 local online_backend  = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/online_backend")
 local progress_hud = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/progress_hud")
+local outgoing        = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/outgoing")
 
 local string_upper = string.upper
 local Localize = nil
@@ -187,7 +188,23 @@ local function src_to_tag(src)
 	return string_upper(primary)
 end
 
+local function offline_submit_outgoing(text, target, pending)
+	if not mod._offline_ready then
+		return false
+	end
+	local job = translator.submit(text, target)
+	if not job then
+		return false
+	end
+	mod._pending[job] = { outgoing = pending, at = mod._clock or 0 }
+	return true
+end
+
 local function online_on_result(element, idx, original, translated, src)
+	if element and element.li_outgoing then
+		outgoing.deliver(element.pending, translated)
+		return
+	end
 	if element == mod._TEST then
 		mod:echo(chat_inject.format(translated, src_to_tag(src)))
 		return
@@ -200,6 +217,8 @@ end
 function mod.update(dt)
 	mod._clock = (mod._clock or 0) + (dt or 0)
 	local now = mod._clock
+
+	outgoing.update(now)
 
 	if model_fetch.active() then
 		model_fetch.tick(now)
@@ -244,7 +263,13 @@ function mod.update(dt)
 				mod._pending[id] = nil
 
 				if p then
-					if p.test then
+					if p.outgoing then
+							if status == 1 and txt and txt ~= "" then
+								outgoing.deliver(p.outgoing, txt)
+							else
+								outgoing.deliver(p.outgoing, nil)
+							end
+						elseif p.test then
 						if status == 1 and txt and txt ~= "" then
 							mod:echo(chat_inject.format(txt, src_iso))
 						elseif status == 2 then
@@ -323,6 +348,16 @@ function mod.on_all_mods_loaded()
 	end)
 	if not chat_hook_ok then
 		mod:warning("Lingua Imperialis: chat hook registration failed - auto-translation disabled")
+	end
+
+	outgoing.setup({
+		settings = settings,
+		translator = translator,
+		online_backend = online_backend,
+		offline_submit = offline_submit_outgoing,
+	})
+	if not outgoing.init() then
+		mod:warning("Lingua Imperialis: outgoing chat hook registration failed - outgoing translation disabled")
 	end
 
 	if not translator.load(DLL_PATH) then
@@ -431,6 +466,7 @@ function mod.on_setting_changed(id)
 end
 
 function mod.on_unload(exit_game)
+	pcall(function() outgoing.clear() end)
 	pcall(function() online_backend.clear() end)
 	if mod._offline_ready then
 		translator.shutdown()

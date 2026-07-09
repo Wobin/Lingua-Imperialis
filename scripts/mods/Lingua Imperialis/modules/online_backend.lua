@@ -143,12 +143,12 @@ end
 -- Public: queue
 -- ─────────────────────────────────────────────────────────────
 
-function M.enqueue(element, idx, text)
+function M.enqueue(element, idx, text, target)
     if not element or not idx or not text or text == "" then
         return
     end
     _qtail = _qtail + 1
-    _queue[_qtail] = { element = element, idx = idx, text = text }
+    _queue[_qtail] = { element = element, idx = idx, text = text, target = target }
 end
 
 local function queue_empty()
@@ -250,7 +250,7 @@ local function tick_body(translator, provider, now, target_iso, email, on_result
     end
 
     local prov = (type(provider) == "string" and provider ~= "" and provider) or "mymemory"
-    local target = (type(target_iso) == "string" and target_iso ~= "" and target_iso) or "en"
+    local target = job.target or ((type(target_iso) == "string" and target_iso ~= "" and target_iso) or "en")
     local host, path = build_request(prov, job.text, target, email)
 
     local started = translator.http_get_start(host, path)
