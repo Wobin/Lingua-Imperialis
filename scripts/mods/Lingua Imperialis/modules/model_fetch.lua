@@ -89,31 +89,21 @@ local function ensure_dir(dir)
     end
 end
 
+local MOD_ROOT = "..\\mods\\Lingua Imperialis"
+
 local function resolve_root()
+    return MOD_ROOT
+end
+
+local function legacy_root()
     if not os_getenv then
-        return nil, "Mods.lua.os.getenv unavailable"
+        return nil
     end
     local appdata = os_getenv("APPDATA")
     if not appdata or appdata == "" then
-        return nil, "APPDATA not set"
+        return nil
     end
-    local root = appdata .. "\\LinguaImperialis"
-    ensure_dir(root)
-    return root
-end
-
-local function resolve_dir(which)
-    local m = MODELS[which]
-    if not m then
-        return nil, "unknown model " .. tostring(which)
-    end
-    local root, err = resolve_root()
-    if not root then
-        return nil, err
-    end
-    local dir = root .. "\\" .. m.subdir
-    ensure_dir(dir)
-    return dir
+    return appdata .. "\\LinguaImperialis"
 end
 
 local function file_complete(path, want_size)
@@ -125,6 +115,41 @@ local function file_complete(path, want_size)
         return false
     end
     return true
+end
+
+local function dir_has_model(dir, m)
+    if not dir then
+        return false
+    end
+    for i = 1, #m.files do
+        if not file_complete(dir .. "\\" .. m.files[i].name, m.files[i].size) then
+            return false
+        end
+    end
+    return true
+end
+
+local function resolve_dir(which)
+    local m = MODELS[which]
+    if not m then
+        return nil, "unknown model " .. tostring(which)
+    end
+
+    local new_dir = MOD_ROOT .. "\\" .. m.subdir
+    if dir_has_model(new_dir, m) then
+        return new_dir
+    end
+
+    local lroot = legacy_root()
+    if lroot then
+        local old_dir = lroot .. "\\" .. m.subdir
+        if dir_has_model(old_dir, m) then
+            return old_dir
+        end
+    end
+
+    ensure_dir(new_dir)
+    return new_dir
 end
 
 local function model_total_size(which)
@@ -354,11 +379,13 @@ function M.init(which, translator, lid_path)
             return false
         end
         if translator.shutdown then translator.shutdown() end
-        if translator.init(dir, lid_path) then
+        local ready, rc = translator.init(dir, lid_path)
+        if ready then
             mod:info("Lingua Imperialis: translator ready (model=%s)", dir)
             return true
         end
-        mod:warning("Lingua Imperialis: translator.init failed at %s - translation disabled.", dir)
+        mod:warning("Lingua Imperialis: translator.init failed at %s (rc=%s; -2=tokenizer, -1=engine)",
+            dir, tostring(rc))
         return false
     end)
     return (ok and ready) and true or false

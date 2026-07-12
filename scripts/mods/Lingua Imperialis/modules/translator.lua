@@ -69,9 +69,12 @@ function M.load(dll_path)
 end
 
 function M.init(model_dir, lid_path)
-    if not M.available then return false end
+    if not M.available then return false, "dll not loaded" end
     local ok, rc = pcall(C.dt_init, model_dir, lid_path)
-    return ok and rc == 0
+    if not ok then
+        return false, tostring(rc)
+    end
+    return rc == 0, tonumber(rc)
 end
 
 function M.shutdown()

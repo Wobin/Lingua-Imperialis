@@ -2,3 +2,10 @@
 *.log
 Thumbs.db
 .DS_Store
+
+# Downloaded translation models now live inside the mod folder (a relative, pure-ASCII
+# path - the old %APPDATA% path broke for usernames with non-ASCII characters).
+# Never commit or ship them: 600MB / 1.3GB, fetched at runtime from GitHub Releases.
+model/
+model-large/
+downloading.txt

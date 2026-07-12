@@ -1,13 +1,13 @@
 --[[
     Name: Lingua Imperialis
     Author: Wobin
-    Date: 2026-07-12
-    Version: 1.3.0
+    Date: 2026-07-13
+    Version: 1.3.1
     Repository:
 ]]--
 
 local mod = get_mod("Lingua Imperialis")
-mod.version = "1.3.0"
+mod.version = "1.3.1"
 
 local translator      = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/translator")
 local chat_inject     = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/chat_inject")
@@ -60,6 +60,39 @@ local function make_on_done(which)
 				mod._offline_ready = false
 			end
 		end)
+	end
+end
+
+local function enable_async(which)
+	model_fetch.verify_start(which, translator, function(passed)
+		if not passed then
+			mod:warning("Lingua Imperialis: installed %s model failed checksum verification - falling back to online translation.", tostring(which))
+			guarded_set(WHICH_ID.small, false)
+			guarded_set(WHICH_ID.large, false)
+			mod._offline_ready = false
+			return
+		end
+
+		if model_fetch.init(which, translator, LID_PATH) then
+			mod._offline_ready = true
+			guarded_set(WHICH_ID[which], true)
+			guarded_set(WHICH_ID[OTHER[which]], false)
+			return
+		end
+
+		mod:warning("Lingua Imperialis: %s model verified OK but the translation engine could not load it - using online translation instead.", tostring(which))
+		mod._offline_ready = false
+	end)
+end
+
+function mod._ensure_offline()
+	if mod._offline_ready or model_fetch.active() then
+		return
+	end
+	if model_fetch.is_complete("small") then
+		enable_async("small")
+	elseif model_fetch.is_complete("large") then
+		enable_async("large")
 	end
 end
 
@@ -401,32 +434,15 @@ function mod.on_all_mods_loaded()
 
 	model_fetch.set_translator(translator)
 
-	local function enable_async(which)
-		model_fetch.verify_start(which, translator, function(passed)
-			if passed and model_fetch.init(which, translator, LID_PATH) then
-				mod._offline_ready = true
-				guarded_set(WHICH_ID[which], true)
-				guarded_set(WHICH_ID[OTHER[which]], false)
-			else
-				mod:warning("Lingua Imperialis: installed %s model failed verification - falling back to online translation.", tostring(which))
-				guarded_set(WHICH_ID.small, false)
-				guarded_set(WHICH_ID.large, false)
-				mod._offline_ready = false
-			end
-		end)
-	end
-
 	local marker = model_fetch.marker_model()
 
 	if marker and not model_fetch.is_complete(marker) then
 		guarded_set(WHICH_ID[marker], true)
 		guarded_set(WHICH_ID[OTHER[marker]], false)
 		model_fetch.start(marker, translator, LID_PATH, make_on_done(marker))
-	elseif model_fetch.is_complete("small") then
-		enable_async("small")
-	elseif model_fetch.is_complete("large") then
-		enable_async("large")
-	else
+	elseif settings.cache.provider == "offline" then
+		mod._ensure_offline()
+	elseif not (model_fetch.is_complete("small") or model_fetch.is_complete("large")) then
 		guarded_set(WHICH_ID.small, false)
 		guarded_set(WHICH_ID.large, false)
 		mod._offline_ready = false
@@ -443,14 +459,18 @@ function mod.on_setting_changed(id)
 	end
 
 	if id == "provider" and settings.cache.provider == "offline" and not mod._offline_ready then
-		pcall(function()
-			local msg = mod:localize("need_model")
-			if mod.notify then
-				mod:notify(msg)
-			else
-				mod:echo(msg)
-			end
-		end)
+		if model_fetch.is_complete("small") or model_fetch.is_complete("large") then
+			pcall(mod._ensure_offline)
+		else
+			pcall(function()
+				local msg = mod:localize("need_model")
+				if mod.notify then
+					mod:notify(msg)
+				else
+					mod:echo(msg)
+				end
+			end)
+		end
 	end
 
 	local which
