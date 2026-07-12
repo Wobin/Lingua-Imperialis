@@ -17,9 +17,9 @@ M.cache = {
 	target_iso = "en",
 	outgoing_enabled = false,
 	outgoing_iso = "en",
+	shift_enter_mode = "skip",
 	provider = "mymemory",
 	translation_rgb = { 106, 190, 48 },
-	mymemory_email = "",
 	channels = {
 		HUB = true,
 		MISSION = true,
@@ -35,21 +35,31 @@ local function get_bool(id, fallback)
 	return v and true or false
 end
 
+local function get_iso(id)
+	local v = mod:get(id)
+	if type(v) ~= "string" or v == "" then
+		return "en"
+	end
+	if v == "zh" then
+		mod:set(id, "zh-CN", false)
+		return "zh-CN"
+	end
+	return v
+end
+
 function M.refresh()
 	M.cache.download_model = get_bool("download_model", false)
 	M.cache.download_model_large = get_bool("download_model_large", false)
 	M.cache.enabled = get_bool("enabled", true)
 
-	local iso = mod:get("target_language")
-	M.cache.target_iso = (type(iso) == "string" and iso ~= "" and iso) or "en"
+	M.cache.target_iso = get_iso("target_language")
 
 	M.cache.outgoing_enabled = get_bool("outgoing_enabled", false)
 
-	local out_iso = mod:get("outgoing_language")
-	M.cache.outgoing_iso = (type(out_iso) == "string" and out_iso ~= "" and out_iso) or "en"
+	M.cache.outgoing_iso = get_iso("outgoing_language")
 
-	local email = mod:get("mymemory_email")
-	M.cache.mymemory_email = (type(email) == "string" and email) or ""
+	local shift_mode = mod:get("shift_enter_mode")
+	M.cache.shift_enter_mode = (type(shift_mode) == "string" and shift_mode ~= "" and shift_mode) or "skip"
 
 	local provider = mod:get("provider")
 	M.cache.provider = (type(provider) == "string" and provider ~= "" and provider) or "mymemory"

@@ -46,12 +46,53 @@ M.cjson_source = cjson_source
 local MYMEMORY_HOST = "api.mymemory.translated.net"
 local GOOGLE_HOST   = "translate.googleapis.com"
 
-local _queue = {}
-local _qhead = 1
-local _qtail = 0
+local MAX_QUEUE = 32
+local MYMEMORY_MAX_BYTES = 480
+local QUOTA_COOLDOWN = 300
+
+M.NOOP = "li_noop"
+
 local _inflight = nil
 local _translator = nil
 local _quota_logged = false
+local _quota_until = 0
+
+local function new_queue()
+    return { items = {}, head = 1, tail = 0 }
+end
+
+local _queue = new_queue()
+local _pqueue = new_queue()
+
+local function q_empty(q)
+    return q.head > q.tail
+end
+
+local function q_count(q)
+    return q.tail - q.head + 1
+end
+
+local function q_push(q, job)
+    q.tail = q.tail + 1
+    q.items[q.tail] = job
+end
+
+local function q_peek(q)
+    return q.items[q.head]
+end
+
+local function q_advance(q)
+    q.items[q.head] = nil
+    q.head = q.head + 1
+    if q.head > q.tail then
+        q.head = 1
+        q.tail = 0
+    end
+end
+
+local function idle()
+    return _inflight == nil and q_empty(_pqueue) and q_empty(_queue)
+end
 
 local function url_encode(text)
     return (text:gsub("[^%w%-_%.~]", function(c)
@@ -118,17 +159,14 @@ local function parse_google(body)
     return table_concat(parts), nil, false, src
 end
 
-local function build_request(provider, text, target, email)
+local function build_request(provider, text, target)
     if provider == "google" then
         local path = "/translate_a/single?client=gtx&sl=auto&tl=" .. target
             .. "&dt=t&q=" .. url_encode(text)
         return GOOGLE_HOST, path
     end
 
-    local path = "/get?q=" .. url_encode(text) .. "&langpair=Autodetect|" .. target
-    if type(email) == "string" and email ~= "" then
-        path = path .. "&de=" .. url_encode(email)
-    end
+    local path = "/get?q=" .. url_encode(text) .. "&langpair=Autodetect%7C" .. target
     return MYMEMORY_HOST, path
 end
 
@@ -143,43 +181,55 @@ end
 -- Public: queue
 -- ─────────────────────────────────────────────────────────────
 
+local function finish(job, on_result, translated, src)
+    if job and on_result then
+        on_result(job.element, job.idx, job.text, translated, src)
+    end
+end
+
 function M.enqueue(element, idx, text, target)
     if not element or not idx or not text or text == "" then
-        return
+        return false
     end
-    _qtail = _qtail + 1
-    _queue[_qtail] = { element = element, idx = idx, text = text, target = target }
-end
 
-local function queue_empty()
-    return _qhead > _qtail
-end
+    local job = { element = element, idx = idx, text = text, target = target }
 
-local function pop()
-    local job = _queue[_qhead]
-    _queue[_qhead] = nil
-    _qhead = _qhead + 1
-    if _qhead > _qtail then
-        _qhead = 1
-        _qtail = 0
+    local q = (type(element) == "table" and element.li_outgoing) and _pqueue or _queue
+    if q_count(q) >= MAX_QUEUE then
+        return false
     end
-    return job
+
+    q_push(q, job)
+    return true
 end
 
 function M.active()
     return _inflight ~= nil
 end
 
-function M.clear()
+function M.clear(on_result)
     pcall(function()
         if _translator and _translator.http_get_cancel then
             _translator.http_get_cancel()
         end
     end)
-    _queue = {}
-    _qhead = 1
-    _qtail = 0
-    _inflight = nil
+
+    if _inflight then
+        local job = _inflight
+        _inflight = nil
+        finish(job, on_result, nil, nil)
+    end
+
+    for _, q in ipairs({ _pqueue, _queue }) do
+        while not q_empty(q) do
+            local job = q_peek(q)
+            q_advance(q)
+            finish(job, on_result, nil, nil)
+        end
+    end
+
+    _pqueue = new_queue()
+    _queue = new_queue()
 end
 
 -- ─────────────────────────────────────────────────────────────
@@ -188,14 +238,16 @@ end
 
 local INFLIGHT_TIMEOUT = 20
 
-local function tick_body(translator, provider, now, target_iso, email, on_result)
+local function tick_body(translator, provider, now, target_iso, on_result)
     -- ── A request is live: poll it. ──────────────────────────────────────
     if _inflight then
         if now - (_inflight.started or now) > INFLIGHT_TIMEOUT then
             if translator.http_get_cancel then
                 translator.http_get_cancel()
             end
+            local job = _inflight
             _inflight = nil
+            finish(job, on_result, nil, nil)
             return
         end
 
@@ -208,6 +260,7 @@ local function tick_body(translator, provider, now, target_iso, email, on_result
         _inflight = nil
 
         if status ~= 1 then
+            finish(job, on_result, nil, nil)
             return
         end
 
@@ -218,59 +271,89 @@ local function tick_body(translator, provider, now, target_iso, email, on_result
                 _quota_logged = true
                 mod:warning("%s", mod:localize("rate_limit"))
             end
+            _quota_until = now + QUOTA_COOLDOWN
+            finish(job, on_result, nil, nil)
+            M.clear(on_result)
             return
         end
 
         if response_status ~= nil and response_status ~= 200 then
+            finish(job, on_result, nil, nil)
             return
         end
 
         if not translated or translated == "" then
+            finish(job, on_result, nil, nil)
             return
         end
 
         if translated == job.text then
+            finish(job, on_result, nil, M.NOOP)
             return
         end
 
-        if on_result then
-            on_result(job.element, job.idx, job.text, translated, src)
-        end
+        finish(job, on_result, translated, src)
         return
     end
 
-    -- ── Idle + work waiting: start the next GET. ─────────────────────────
-    if queue_empty() then
+    if now < _quota_until then
         return
     end
 
-    local job = pop()
+    if _quota_until > 0 then
+        _quota_until = 0
+        _quota_logged = false
+    end
+
+    -- ── Idle + work waiting: start the next GET. Outgoing (priority) first. ──
+    local q = (not q_empty(_pqueue)) and _pqueue or _queue
+    if q_empty(q) then
+        return
+    end
+
+    local job = q_peek(q)
     if not job then
+        q_advance(q)
         return
     end
 
     local prov = (type(provider) == "string" and provider ~= "" and provider) or "mymemory"
     local target = job.target or ((type(target_iso) == "string" and target_iso ~= "" and target_iso) or "en")
-    local host, path = build_request(prov, job.text, target, email)
 
-    local started = translator.http_get_start(host, path)
-    if started then
+    if prov ~= "google" and #job.text > MYMEMORY_MAX_BYTES then
+        q_advance(q)
+        finish(job, on_result, nil, nil)
+        return
+    end
+
+    local host, path = build_request(prov, job.text, target)
+
+    if translator.http_get_start(host, path) then
+        q_advance(q)
         job.provider = prov
         job.started = now
         _inflight = job
     end
 end
 
-function M.tick(translator, provider, now, target_iso, email, on_result)
+function M.tick(translator, provider, now, target_iso, on_result)
     if not translator or not translator.available then
         return
     end
     _translator = translator
 
-    local ok, err = pcall(tick_body, translator, provider, now, target_iso, email, on_result)
+    if idle() then
+        return
+    end
+
+    local ok, err = pcall(tick_body, translator, provider, now, target_iso, on_result)
     if not ok then
         mod:warning("Lingua Imperialis: online_backend.tick error: %s", tostring(err))
+        local job = _inflight
         _inflight = nil
+        if job then
+            pcall(finish, job, on_result, nil, nil)
+        end
     end
 end
 

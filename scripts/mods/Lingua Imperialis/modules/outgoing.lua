@@ -15,6 +15,49 @@ local DEADLINE = 5
 local _deps = nil
 local _pendings = {}
 
+local _shift_indices = nil
+
+local function shift_held()
+    local kb = rawget(_G, "Keyboard")
+    if not kb then
+        return false
+    end
+
+    if not _shift_indices then
+        local ok, left, right = pcall(function()
+            return kb.button_index("left shift"), kb.button_index("right shift")
+        end)
+        if not ok then
+            return false
+        end
+        local t = {}
+        if left then t[#t + 1] = left end
+        if right then t[#t + 1] = right end
+        if #t == 0 then
+            return false
+        end
+        _shift_indices = t
+    end
+
+    for i = 1, #_shift_indices do
+        local idx = _shift_indices[i]
+        if idx and kb.button(idx) > 0.5 then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function wants_translation(mode)
+    if mode == "force" then
+        return shift_held()
+    elseif mode == "skip" then
+        return not shift_held()
+    end
+    return true
+end
+
 function M.setup(deps)
     _deps = deps
 end
@@ -42,8 +85,7 @@ local function dispatch(pending)
     end
 
     local ctx = { li_outgoing = true, pending = pending }
-    _deps.online_backend.enqueue(ctx, 0, pending.text, pending.target)
-    return true
+    return _deps.online_backend.enqueue(ctx, 0, pending.text, pending.target) and true or false
 end
 
 function M.init()
@@ -54,9 +96,11 @@ function M.init()
 
                 if not cache
                     or not mod:is_enabled()
+                    or not cache.enabled
                     or not cache.outgoing_enabled
                     or type(message_body) ~= "string"
-                    or message_body:match("^%s*$") then
+                    or message_body:match("^%s*$")
+                    or not wants_translation(cache.shift_enter_mode) then
                     return func(self, channel_handle, message_body)
                 end
 
@@ -70,7 +114,8 @@ function M.init()
                     sent = false,
                 }
 
-                if not dispatch(pending) then
+                local ok, dispatched = pcall(dispatch, pending)
+                if not ok or not dispatched then
                     return func(self, channel_handle, message_body)
                 end
 

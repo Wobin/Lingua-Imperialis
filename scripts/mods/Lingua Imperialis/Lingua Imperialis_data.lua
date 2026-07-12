@@ -6,6 +6,12 @@ local provider_options = {
 	{ text = "provider_offline", value = "offline" }
 }
 
+local shift_enter_options = {
+	{ text = "shift_enter_skip", value = "skip" },
+	{ text = "shift_enter_force", value = "force" },
+	{ text = "shift_enter_off", value = "off" },
+}
+
 local language_options = {
 	{ text = "lang_en", value = "en" },
 	{ text = "lang_de", value = "de" },
@@ -19,7 +25,8 @@ local language_options = {
 	{ text = "lang_sv", value = "sv" },
 	{ text = "lang_tr", value = "tr" },
 	{ text = "lang_uk", value = "uk" },
-	{ text = "lang_zh", value = "zh" },
+	{ text = "lang_zh_cn", value = "zh-CN" },
+	{ text = "lang_zh_tw", value = "zh-TW" },
 	{ text = "lang_ja", value = "ja" },
 	{ text = "lang_ko", value = "ko" },
 	{ text = "lang_ar", value = "ar" },
@@ -80,6 +87,12 @@ return {
 						type = "dropdown",
 						default_value = "en",
 						options = table.clone(language_options),
+					},
+					{
+						setting_id = "shift_enter_mode",
+						type = "dropdown",
+						default_value = "skip",
+						options = table.clone(shift_enter_options),
 					},
 				},
 			},

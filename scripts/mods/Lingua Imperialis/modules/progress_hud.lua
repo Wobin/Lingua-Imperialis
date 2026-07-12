@@ -137,4 +137,11 @@ function M.clear()
     state.text = nil
 end
 
+function M.on_unload()
+    state.hooked = nil
+    state.logged_draw = nil
+    state.logged_err = nil
+    state.text = nil
+end
+
 return M

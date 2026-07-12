@@ -1,13 +1,13 @@
 --[[
     Name: Lingua Imperialis
     Author: Wobin
-    Date: 2026-07-10
-    Version: 1.2.1
+    Date: 2026-07-12
+    Version: 1.3.0
     Repository:
 ]]--
 
 local mod = get_mod("Lingua Imperialis")
-mod.version = "1.2.1"
+mod.version = "1.3.0"
 
 local translator      = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/translator")
 local chat_inject     = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/chat_inject")
@@ -31,8 +31,6 @@ function mod._engine()
 	return settings.cache.provider == "offline" and "offline" or "online"
 end
 
-mod._suppress_setting = false
-
 local MOD_REL = "../mods/Lingua Imperialis"
 local DLL_PATH = MOD_REL .. "/bin/dtranslate.dll"
 local LID_PATH = MOD_REL .. "/assets/lid.176.ftz"
@@ -41,9 +39,7 @@ local WHICH_ID = { small = "download_model", large = "download_model_large" }
 local OTHER    = { small = "large", large = "small" }
 
 local function guarded_set(id, value)
-	mod._suppress_setting = true
 	mod:set(id, value)
-	mod._suppress_setting = false
 end
 
 local function make_on_done(which)
@@ -75,6 +71,13 @@ local _cache_count = 0
 
 local function cache_get(text)
 	return _cache[text]
+end
+
+local function cache_reset()
+	_cache = {}
+	_cache_keys = {}
+	_cache_head = 0
+	_cache_count = 0
 end
 
 local function cache_put(text, translated, tag)
@@ -135,7 +138,7 @@ local function build_com_wheel_filter()
 end
 
 
-function mod._on_incoming(chat_element, text, log_index, channel_tag)
+function mod._on_incoming(chat_element, text, log_index, channel_tag, sender, channel)
 	if not text or text == "" then
 		return
 	end
@@ -151,9 +154,13 @@ function mod._on_incoming(chat_element, text, log_index, channel_tag)
 	if channel_tag then
 		local tag = string_upper(channel_tag)
 		local channels = settings.cache.channels
-		if channels[tag] ~= nil and channels[tag] == false then
+		if channels[tag] == false then
 			return
 		end
+	end
+
+	if is_own(chat_element, sender, channel) then
+		return
 	end
 
 	local cached = cache_get(text)
@@ -161,6 +168,10 @@ function mod._on_incoming(chat_element, text, log_index, channel_tag)
 		if cached.txt then
 			chat_inject.append(chat_element, log_index, text, cached.txt, cached.tag)
 		end
+		return
+	end
+
+	if model_fetch.active() then
 		return
 	end
 
@@ -206,12 +217,45 @@ local function online_on_result(element, idx, original, translated, src)
 		return
 	end
 	if element == mod._TEST then
-		mod:echo(chat_inject.format(translated, src_to_tag(src)))
+		if translated and translated ~= "" then
+			mod:echo(chat_inject.format(translated, src_to_tag(src)))
+		else
+			mod:echo("no translation (error, quota, or same language)")
+		end
 		return
 	end
+
+	if not translated or translated == "" then
+		if src == online_backend.NOOP then
+			cache_put(original, nil, nil)
+		end
+		return
+	end
+
 	local tag = src_to_tag(src)
 	chat_inject.append(element, idx, original, translated, tag)
 	cache_put(original, translated, tag)
+end
+
+function mod._flush_offline_pending()
+	local pendings = mod._pending
+	mod._pending = {}
+	for _, p in pairs(pendings) do
+		if type(p) == "table" and p.outgoing then
+			pcall(outgoing.deliver, p.outgoing, nil)
+		end
+	end
+end
+
+local function prune_offline_pending(now)
+	for id, p in pairs(mod._pending) do
+		if type(p) == "table" and p.at and (now - p.at) > 15 then
+			mod._pending[id] = nil
+			if p.outgoing then
+				pcall(outgoing.deliver, p.outgoing, nil)
+			end
+		end
+	end
 end
 
 function mod.update(dt)
@@ -227,13 +271,13 @@ function mod.update(dt)
 
 	local engine = mod._engine()
 
-	-- ── Engine-switch reconcile: on a change, drop the opposite backend's work
-	-- so a stale queue can never fire under the newly selected engine. ──────
+	-- ── Engine-switch reconcile: drop the opposite backend's work, delivering
+	-- anything held (translation = nil) rather than discarding it. ──────────
 	if engine ~= mod._last_engine then
 		if engine == "offline" then
-			pcall(function() online_backend.clear() end)
+			pcall(online_backend.clear, online_on_result)
 		else
-			mod._pending = {}
+			mod._flush_offline_pending()
 		end
 		mod._last_engine = engine
 	end
@@ -241,15 +285,8 @@ function mod.update(dt)
 	-- ── OFFLINE poll loop: run only when offline is selected, a model is loaded,
 	-- and there are offline pending jobs. ───────────────────────────────────
 	if engine == "offline" and mod._offline_ready and next(mod._pending) ~= nil then
-		local ok = pcall(function()
-			for id, p in pairs(mod._pending) do
-				if type(p) == "table" and p.at and (now - p.at) > 15 then
-					mod._pending[id] = nil
-				end
-			end
-		end)
-		if not ok then
-			mod._pending = {}
+		if not pcall(prune_offline_pending, now) then
+			mod._flush_offline_pending()
 		end
 
 		pcall(function()
@@ -264,12 +301,12 @@ function mod.update(dt)
 
 				if p then
 					if p.outgoing then
-							if status == 1 and txt and txt ~= "" then
-								outgoing.deliver(p.outgoing, txt)
-							else
-								outgoing.deliver(p.outgoing, nil)
-							end
-						elseif p.test then
+						if status == 1 and txt and txt ~= "" then
+							outgoing.deliver(p.outgoing, txt)
+						else
+							outgoing.deliver(p.outgoing, nil)
+						end
+					elseif p.test then
 						if status == 1 and txt and txt ~= "" then
 							mod:echo(chat_inject.format(txt, src_iso))
 						elseif status == 2 then
@@ -293,7 +330,7 @@ function mod.update(dt)
 
 	-- ── ONLINE driver: runs only while the online engine is selected. ───────
 	if engine == "online" then
-		online_backend.tick(translator, settings.cache.provider, now, settings.cache.target_iso, settings.cache.mymemory_email, online_on_result)
+		online_backend.tick(translator, settings.cache.provider, now, settings.cache.target_iso, online_on_result)
 	end
 end
 
@@ -340,10 +377,7 @@ function mod.on_all_mods_loaded()
 			if not idx or idx == 0 then
 				return
 			end
-			if is_own(self, sender, channel) then
-				return
-			end
-			mod._on_incoming(self, message, idx, channel.tag)
+			mod._on_incoming(self, message, idx, channel.tag, sender, channel)
 		end)
 	end)
 	if not chat_hook_ok then
@@ -404,6 +438,10 @@ function mod.on_setting_changed(id)
 	chat_inject.set_color(settings.cache.translation_rgb)
 	mod._target_iso = settings.cache.target_iso or "en"
 
+	if id == "target_language" or id == "provider" then
+		cache_reset()
+	end
+
 	if id == "provider" and settings.cache.provider == "offline" and not mod._offline_ready then
 		pcall(function()
 			local msg = mod:localize("need_model")
@@ -413,10 +451,6 @@ function mod.on_setting_changed(id)
 				mod:echo(msg)
 			end
 		end)
-	end
-
-	if mod._suppress_setting then
-		return
 	end
 
 	local which
@@ -453,6 +487,7 @@ function mod.on_setting_changed(id)
 		else
 			if model_fetch.is_complete(which) then
 				mod._offline_ready = false
+				mod._flush_offline_pending()
 				translator.shutdown()
 			elseif model_fetch.active() and model_fetch.active_which() == which then
 				model_fetch.cancel()
@@ -468,6 +503,7 @@ end
 function mod.on_unload(exit_game)
 	pcall(function() outgoing.clear() end)
 	pcall(function() online_backend.clear() end)
+	pcall(function() progress_hud.on_unload() end)
 	if mod._offline_ready then
 		translator.shutdown()
 		mod._offline_ready = false

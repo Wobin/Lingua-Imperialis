@@ -26,6 +26,15 @@ local MARKER = "->"
 
 local DEFAULT_RGB = { 106, 190, 48 }
 
+local MESSAGE_SPACING = 15
+do
+	local ok, chat_settings = pcall(require,
+		"scripts/ui/constant_elements/elements/chat/constant_element_chat_settings")
+	if ok and type(chat_settings) == "table" and type(chat_settings.message_spacing) == "number" then
+		MESSAGE_SPACING = chat_settings.message_spacing
+	end
+end
+
 local function clamp255(n)
 	n = math_floor((type(n) == "number" and n or 0) + 0.5)
 	if n < 0 then
@@ -113,6 +122,11 @@ function M.append(chat_element, log_index, original_text, translated, tag_label)
 	content.message = combined
 	content.message_format = combined
 	entry.message_text = (entry.message_text or "") .. " " .. body
+
+	local old_size = content.size
+	if old_size and old_size[2] and type(chat_element._total_chat_height) == "number" then
+		chat_element._total_chat_height = chat_element._total_chat_height - (old_size[2] + MESSAGE_SPACING)
+	end
 	content.size = nil
 
 	return true
