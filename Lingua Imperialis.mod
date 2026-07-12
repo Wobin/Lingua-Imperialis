@@ -10,6 +10,6 @@ return {
 	end,
 	load_after = {},
 	require = {},
-	version = "1.3.1",
+	version = "1.3.0",
 	packages = {},
 }

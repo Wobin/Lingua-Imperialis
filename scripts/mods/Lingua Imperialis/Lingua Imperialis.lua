@@ -2,12 +2,12 @@
     Name: Lingua Imperialis
     Author: Wobin
     Date: 2026-07-13
-    Version: 1.3.1
+    Version: 1.3.0
     Repository:
 ]]--
 
 local mod = get_mod("Lingua Imperialis")
-mod.version = "1.3.1"
+mod.version = "1.3.0"
 
 local translator      = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/translator")
 local chat_inject     = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/chat_inject")
