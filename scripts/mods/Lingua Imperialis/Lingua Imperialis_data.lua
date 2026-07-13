@@ -6,10 +6,16 @@ local provider_options = {
 	{ text = "provider_offline", value = "offline" }
 }
 
-local shift_enter_options = {
-	{ text = "shift_enter_skip", value = "skip" },
-	{ text = "shift_enter_force", value = "force" },
-	{ text = "shift_enter_off", value = "off" },
+local modifier_key_options = {
+	{ text = "mod_key_shift", value = "shift" },
+	{ text = "mod_key_ctrl", value = "ctrl" },
+	{ text = "mod_key_alt", value = "alt" },
+}
+
+local modifier_mode_options = {
+	{ text = "modifier_skip", value = "skip" },
+	{ text = "modifier_force", value = "force" },
+	{ text = "modifier_off", value = "off" },
 }
 
 local language_options = {
@@ -89,10 +95,21 @@ return {
 						options = table.clone(language_options),
 					},
 					{
-						setting_id = "shift_enter_mode",
+						setting_id = "outgoing_modifier_key",
+						type = "dropdown",
+						default_value = "shift",
+						options = table.clone(modifier_key_options),
+					},
+					{
+						setting_id = "outgoing_modifier_mode",
 						type = "dropdown",
 						default_value = "skip",
-						options = table.clone(shift_enter_options),
+						options = table.clone(modifier_mode_options),
+					},
+					{
+						setting_id = "outgoing_notify_untranslated",
+						type = "checkbox",
+						default_value = true,
 					},
 				},
 			},

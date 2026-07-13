@@ -15,63 +15,126 @@ local DEADLINE = 5
 local _deps = nil
 local _pendings = {}
 
-local _shift_indices = nil
+local MODIFIER_VK = {
+    shift = { 160, 161 },
+    ctrl  = { 162, 163 },
+    alt   = { 164, 165 },
+}
 
-local function shift_held()
+local MODIFIER_NAMES = {
+    shift = { "left shift", "right shift" },
+    ctrl  = { "left ctrl",  "right ctrl"  },
+    alt   = { "left alt",   "right alt"   },
+}
+
+local _indices = {}
+
+local function resolve_indices(kb, key)
+    local cached = _indices[key]
+    if cached then
+        return cached
+    end
+
+    local vk = MODIFIER_VK[key] or MODIFIER_VK.shift
+    if pcall(function() return kb.button(vk[1]) + kb.button(vk[2]) end) then
+        _indices[key] = vk
+        return vk
+    end
+
+    local names = MODIFIER_NAMES[key] or MODIFIER_NAMES.shift
+    local ok, left, right = pcall(function()
+        return kb.button_index(names[1]), kb.button_index(names[2])
+    end)
+    if not ok or not (left or right) then
+        return nil
+    end
+
+    local t = { left or right, right or left }
+    _indices[key] = t
+    return t
+end
+
+local function modifier_held(key)
     local kb = rawget(_G, "Keyboard")
     if not kb then
         return false
     end
 
-    if not _shift_indices then
-        local ok, left, right = pcall(function()
-            return kb.button_index("left shift"), kb.button_index("right shift")
-        end)
-        if not ok then
-            return false
-        end
-        local t = {}
-        if left then t[#t + 1] = left end
-        if right then t[#t + 1] = right end
-        if #t == 0 then
-            return false
-        end
-        _shift_indices = t
+    local idx = resolve_indices(kb, key)
+    if not idx then
+        return false
     end
 
-    for i = 1, #_shift_indices do
-        local idx = _shift_indices[i]
-        if idx and kb.button(idx) > 0.5 then
-            return true
-        end
-    end
+    local ok, sum = pcall(function()
+        return kb.button(idx[1]) + kb.button(idx[2])
+    end)
 
-    return false
+    return ok and sum > 0
 end
 
-local function wants_translation(mode)
-    if mode == "force" then
-        return shift_held()
-    elseif mode == "skip" then
-        return not shift_held()
+local function wants_translation(cache)
+    local mode = cache.modifier_mode
+    if mode ~= "skip" and mode ~= "force" then
+        return true
     end
-    return true
+
+    local held = modifier_held(cache.modifier_key)
+    local translate = (mode == "force") and held or (not held)
+
+    if mod.debug_modifier then
+        mod:info("[modifier] key=%s mode=%s held=%s -> translate=%s",
+            tostring(cache.modifier_key), tostring(mode), tostring(held), tostring(translate))
+    end
+
+    return translate
 end
 
 function M.setup(deps)
     _deps = deps
 end
 
-function M.deliver(pending, translated)
+M.REASON = {
+    NOOP    = "untranslated_noop",
+    FAILED  = "untranslated_failed",
+    TIMEOUT = "untranslated_timeout",
+}
+
+local function notify_fallback(reason)
+    if not reason then
+        return
+    end
+    local cache = _deps and _deps.settings and _deps.settings.cache
+    if not cache or not cache.notify_untranslated then
+        return
+    end
+    pcall(function()
+        mod:echo(mod:localize(reason))
+    end)
+end
+
+function M.deliver(pending, translated, reason)
     if not pending or pending.sent then
         return
     end
     pending.sent = true
+
     local text = translated
-    if type(text) ~= "string" or text == "" then
+    local ok = type(text) == "string" and text ~= ""
+    if not ok then
         text = pending.text
     end
+
+    if mod.debug_modifier then
+        mod:info("[outgoing] deliver translated=%s (%s) reason=%s waited=%.2fs",
+            tostring(ok), ok and "TRANSLATED" or "FELL BACK TO ORIGINAL", tostring(reason),
+            (mod._clock or 0) - ((pending.deadline or 0) - DEADLINE))
+    end
+
     pcall(pending.func, pending.self, pending.channel, text)
+
+    if not ok then
+        notify_fallback(reason)
+    end
 end
 
 local function dispatch(pending)
@@ -100,7 +163,7 @@ function M.init()
                     or not cache.outgoing_enabled
                     or type(message_body) ~= "string"
                     or message_body:match("^%s*$")
-                    or not wants_translation(cache.shift_enter_mode) then
+                    or not wants_translation(cache) then
                     return func(self, channel_handle, message_body)
                 end
 
@@ -131,7 +194,7 @@ function M.update(clock)
         if p.sent then
             table.remove(_pendings, i)
         elseif clock > p.deadline then
-            M.deliver(p, nil)
+            M.deliver(p, nil, M.REASON.TIMEOUT)
             table.remove(_pendings, i)
         else
             i = i + 1

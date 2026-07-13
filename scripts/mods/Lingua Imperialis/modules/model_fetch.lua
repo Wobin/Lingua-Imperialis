@@ -15,17 +15,36 @@ local math_floor = math.floor
 -- ─────────────────────────────────────────────────────────────
 -- Pinned release constants (two mutually-exclusive models)
 -- ─────────────────────────────────────────────────────────────
-local HOST = "github.com"
+local HOSTS = {
+    "huggingface.co",
+    "hf-mirror.com",
+}
 local USE_HTTPS = true
+
+local _host_idx = 1
+
+local function current_host()
+    return HOSTS[_host_idx] or HOSTS[1]
+end
+
+local function next_host()
+    if _host_idx >= #HOSTS then
+        return false
+    end
+    _host_idx = _host_idx + 1
+    return true
+end
 
 local CONFIG_SIZE = 233
 local VOCAB_SIZE  = 6177383
 local SPM_SIZE    = 4852054
 
+local HF_REPO = "/Wobin/lingua-imperialis-models/resolve/main"
+
 local MODELS = {
     small = {
         subdir = "model",
-        path   = "/Wobin/Lingua-Imperialis/releases/download/model-v1/",
+        path   = HF_REPO .. "/model/",
         sha256 = "398726640cc2a02cc6a35277fa3cf2159ce8a1a66b48aa1b6c8837a47e3dd00c",
         files  = {
             { name = "config.json",             size = CONFIG_SIZE },
@@ -36,7 +55,7 @@ local MODELS = {
     },
     large = {
         subdir = "model-large",
-        path   = "/Wobin/Lingua-Imperialis/releases/download/model-large-v1/",
+        path   = HF_REPO .. "/model-large/",
         sha256 = "8ddec65e4b3cfe07d687353743b4721e5e62afcd34cde21f0a68fb8d935ef08b",
         files  = {
             { name = "config.json",             size = CONFIG_SIZE },
@@ -424,7 +443,7 @@ local function fallback_warning(which)
     mod:warning("Lingua Imperialis: translation model download failed - translation disabled (chat still works).")
     mod:warning("Lingua Imperialis: to install manually, download these files:")
     for i = 1, #m.files do
-        mod:warning("  https://%s%s%s", HOST, m.path, m.files[i].name)
+        mod:warning("  https://%s%s%s", current_host(), m.path, m.files[i].name)
     end
     mod:warning("Lingua Imperialis: place them into: %s", dir)
 end
@@ -440,7 +459,19 @@ local function fail(which, on_done)
     end
 end
 
-local function begin_file(which, file_index, translator, lid_path, on_done, label)
+local begin_file
+
+local function retry_next_host(a, reason)
+    local prev = current_host()
+    if not next_host() then
+        return false
+    end
+    mod:warning("Lingua Imperialis: %s download %s on %s - retrying from %s",
+        tostring(a.which), tostring(reason), prev, current_host())
+    return begin_file(a.which, a.file_index, a.translator, a.lid_path, a.on_done, a.label)
+end
+
+function begin_file(which, file_index, translator, lid_path, on_done, label)
     local m = MODELS[which]
     local dir, derr = resolve_dir(which)
     if not dir then
@@ -454,8 +485,9 @@ local function begin_file(which, file_index, translator, lid_path, on_done, labe
     local cur = file_size(dest) or 0
     local resume_from = (cur > 0 and cur < entry.size) and cur or 0
 
-    mod:info("Lingua Imperialis: fetching %s (resume_from=%d) ...", entry.name, resume_from)
-    if not translator.download_start(HOST, m.path .. entry.name, USE_HTTPS, dest, resume_from) then
+    mod:info("Lingua Imperialis: fetching %s from %s (resume_from=%d) ...",
+        entry.name, current_host(), resume_from)
+    if not translator.download_start(current_host(), m.path .. entry.name, USE_HTTPS, dest, resume_from) then
         mod:warning("Lingua Imperialis: download_start failed for %s", entry.name)
         fail(which, on_done)
         return false
@@ -516,6 +548,8 @@ function M.start(which, translator, lid_path, on_done)
             if on_done then on_done(false) end
             return
         end
+
+        _host_idx = 1
 
         _translator = translator
         write_marker(which)
@@ -605,6 +639,9 @@ function M.tick(now)
                 if translator and translator.download_cancel then
                     translator.download_cancel()
                 end
+                if retry_next_host(a, "stalled") then
+                    return
+                end
                 mod:warning("Lingua Imperialis: %s download stalled (no progress) - aborting.", tostring(which))
                 fail(which, a.on_done)
                 return
@@ -650,6 +687,9 @@ function M.tick(now)
             return
         end
 
+        if retry_next_host(a, "failed") then
+            return
+        end
         fail(which, a.on_done)
     end)
 

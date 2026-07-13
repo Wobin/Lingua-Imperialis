@@ -1,13 +1,13 @@
 --[[
     Name: Lingua Imperialis
     Author: Wobin
-    Date: 2026-07-13
-    Version: 1.3.0
+    Date: 2026-07-14
+    Version: 1.4.0
     Repository:
 ]]--
 
 local mod = get_mod("Lingua Imperialis")
-mod.version = "1.3.0"
+mod.version = "1.4.0"
 
 local translator      = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/translator")
 local chat_inject     = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/chat_inject")
@@ -246,7 +246,11 @@ end
 
 local function online_on_result(element, idx, original, translated, src)
 	if element and element.li_outgoing then
-		outgoing.deliver(element.pending, translated)
+		local reason
+		if not translated or translated == "" then
+			reason = (src == online_backend.NOOP) and outgoing.REASON.NOOP or outgoing.REASON.FAILED
+		end
+		outgoing.deliver(element.pending, translated, reason)
 		return
 	end
 	if element == mod._TEST then
@@ -275,7 +279,7 @@ function mod._flush_offline_pending()
 	mod._pending = {}
 	for _, p in pairs(pendings) do
 		if type(p) == "table" and p.outgoing then
-			pcall(outgoing.deliver, p.outgoing, nil)
+			pcall(outgoing.deliver, p.outgoing, nil, outgoing.REASON.FAILED)
 		end
 	end
 end
@@ -285,7 +289,7 @@ local function prune_offline_pending(now)
 		if type(p) == "table" and p.at and (now - p.at) > 15 then
 			mod._pending[id] = nil
 			if p.outgoing then
-				pcall(outgoing.deliver, p.outgoing, nil)
+				pcall(outgoing.deliver, p.outgoing, nil, outgoing.REASON.FAILED)
 			end
 		end
 	end
@@ -336,8 +340,10 @@ function mod.update(dt)
 					if p.outgoing then
 						if status == 1 and txt and txt ~= "" then
 							outgoing.deliver(p.outgoing, txt)
+						elseif status == 2 then
+							outgoing.deliver(p.outgoing, nil, outgoing.REASON.NOOP)
 						else
-							outgoing.deliver(p.outgoing, nil)
+							outgoing.deliver(p.outgoing, nil, outgoing.REASON.FAILED)
 						end
 					elseif p.test then
 						if status == 1 and txt and txt ~= "" then

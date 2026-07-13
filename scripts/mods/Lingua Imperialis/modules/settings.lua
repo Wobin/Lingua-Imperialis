@@ -17,7 +17,9 @@ M.cache = {
 	target_iso = "en",
 	outgoing_enabled = false,
 	outgoing_iso = "en",
-	shift_enter_mode = "skip",
+	modifier_key = "shift",
+	modifier_mode = "skip",
+	notify_untranslated = true,
 	provider = "mymemory",
 	translation_rgb = { 106, 190, 48 },
 	channels = {
@@ -58,8 +60,13 @@ function M.refresh()
 
 	M.cache.outgoing_iso = get_iso("outgoing_language")
 
-	local shift_mode = mod:get("shift_enter_mode")
-	M.cache.shift_enter_mode = (type(shift_mode) == "string" and shift_mode ~= "" and shift_mode) or "skip"
+	local mod_key = mod:get("outgoing_modifier_key")
+	M.cache.modifier_key = (type(mod_key) == "string" and mod_key ~= "" and mod_key) or "shift"
+
+	local mod_mode = mod:get("outgoing_modifier_mode")
+	M.cache.modifier_mode = (type(mod_mode) == "string" and mod_mode ~= "" and mod_mode) or "skip"
+
+	M.cache.notify_untranslated = get_bool("outgoing_notify_untranslated", true)
 
 	local provider = mod:get("provider")
 	M.cache.provider = (type(provider) == "string" and provider ~= "" and provider) or "mymemory"
