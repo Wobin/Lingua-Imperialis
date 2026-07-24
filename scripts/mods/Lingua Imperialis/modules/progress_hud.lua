@@ -25,27 +25,38 @@ local _ui_ready = false
 local _render_settings = {}
 local _empty_scenegraph = {}
 
+local _text_box = { 0, 0 }
+local _text_pos = { 0, 0, 952 }
+local _shadow_pos = { 0, 0, 951 }
+
 local BACKDROP_COLOR = { 150, 0, 0, 0 }
 local TEXT_COLOR = { 255, 220, 235, 220 }
 local SHADOW_COLOR = { 255, 0, 0, 0 }
 
+local _ui_tried = false
+
+local function _resolve_ui_body()
+    UIRenderer = require("scripts/managers/ui/ui_renderer")
+    local UIFonts = require("scripts/managers/ui/ui_fonts")
+    local UIFontSettings = require("scripts/managers/ui/ui_font_settings")
+    _font_type = UIFontSettings.hud_body.font_type
+    _font_options = UIFonts.get_font_options_by_style({
+        text_horizontal_alignment = "left",
+        text_vertical_alignment = "center",
+        drop_shadow = true,
+    }, {})
+end
+
 local function _resolve_ui()
-    if _ui_ready then
-        return true
+    if _ui_ready or _ui_tried then
+        return _ui_ready
     end
-    local ok = pcall(function()
-        UIRenderer = require("scripts/managers/ui/ui_renderer")
-        local UIFonts = require("scripts/managers/ui/ui_fonts")
-        local UIFontSettings = require("scripts/managers/ui/ui_font_settings")
-        _font_type = UIFontSettings.hud_body.font_type
-        _font_options = UIFonts.get_font_options_by_style({
-            text_horizontal_alignment = "left",
-            text_vertical_alignment = "center",
-            drop_shadow = true,
-        }, {})
-    end)
+    _ui_tried = true
+    local ok, err = pcall(_resolve_ui_body)
     if ok and UIRenderer then
         _ui_ready = true
+    else
+        mod:warning("Lingua Imperialis: progress_hud UI resolve failed: %s", tostring(err))
     end
     return _ui_ready
 end
@@ -82,11 +93,14 @@ local function _draw(self, ui_renderer, input_service, dt)
 
     local inset = 14
     local font_size = math_floor(22 * scale + 0.5)
-    local text_box = { bar_w - inset * 2, bar_h }
-    local text_pos = { bar_x + inset, bar_y, 952 }
-    local shadow_pos = { bar_x + inset + 1, bar_y + 1, 951 }
-    UIRenderer.draw_text(ui_renderer, text, font_size, _font_type, shadow_pos, text_box, SHADOW_COLOR, _font_options)
-    UIRenderer.draw_text(ui_renderer, text, font_size, _font_type, text_pos, text_box, TEXT_COLOR, _font_options)
+    _text_box[1] = bar_w - inset * 2
+    _text_box[2] = bar_h
+    _text_pos[1] = bar_x + inset
+    _text_pos[2] = bar_y
+    _shadow_pos[1] = bar_x + inset + 1
+    _shadow_pos[2] = bar_y + 1
+    UIRenderer.draw_text(ui_renderer, text, font_size, _font_type, _shadow_pos, _text_box, SHADOW_COLOR, _font_options)
+    UIRenderer.draw_text(ui_renderer, text, font_size, _font_type, _text_pos, _text_box, TEXT_COLOR, _font_options)
 
     UIRenderer.end_pass(ui_renderer)
 end

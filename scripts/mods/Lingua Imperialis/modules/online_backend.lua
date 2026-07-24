@@ -21,11 +21,6 @@ local function resolve_cjson()
         return via_rawget, "rawget(_G)"
     end
 
-    local ok_bare, via_bare = pcall(function() return cjson end)
-    if ok_bare and type(via_bare) == "table" and via_bare.decode then
-        return via_bare, "global"
-    end
-
     local mods = rawget(_G, "Mods")
     if type(mods) == "table" and type(mods.lua) == "table"
         and type(mods.lua.cjson) == "table" and mods.lua.cjson.decode then
@@ -208,11 +203,9 @@ function M.active()
 end
 
 function M.clear(on_result)
-    pcall(function()
-        if _translator and _translator.http_get_cancel then
-            _translator.http_get_cancel()
-        end
-    end)
+    if _translator and _translator.http_get_cancel then
+        _translator.http_get_cancel()
+    end
 
     if _inflight then
         local job = _inflight

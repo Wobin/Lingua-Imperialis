@@ -2,12 +2,12 @@
     Name: Lingua Imperialis
     Author: Wobin
     Date: 2026-07-14
-    Version: 1.4.0
+    Version: 1.4.1
     Repository:
 ]]--
 
 local mod = get_mod("Lingua Imperialis")
-mod.version = "1.4.0"
+mod.version = "1.4.1"
 
 local translator      = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/translator")
 local chat_inject     = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/chat_inject")
@@ -18,6 +18,7 @@ local progress_hud = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperi
 local outgoing        = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/outgoing")
 
 local string_upper = string.upper
+local string_format = string.format
 local Localize = nil
 
 
@@ -140,14 +141,52 @@ end
 
 local CHAT_ELEMENT_PATH = "scripts/ui/constant_elements/elements/chat/constant_element_chat"
 
-local function is_own(self, sender, channel)
-	if not sender or not channel or not channel.tag then
+local SENT_TTL = 20
+local _sent = {}
+local _sent_n = 0
+
+function mod._note_sent(text)
+	if type(text) ~= "string" or text == "" then
+		return
+	end
+	_sent[text] = mod._clock or 0
+	_sent_n = _sent_n + 1
+	if _sent_n >= 16 then
+		_sent_n = 0
+		local now = mod._clock or 0
+		for k, at in pairs(_sent) do
+			if now - at > SENT_TTL then
+				_sent[k] = nil
+			end
+		end
+	end
+end
+
+local function was_sent_by_us(text)
+	local at = _sent[text]
+	if not at then
 		return false
 	end
-	local ok, own = pcall(function()
-		local channel_name = self:_channel_name(channel.tag, false, channel.channel_name)
-		return Localize("loc_chat_own_player", true, { channel_name = channel_name })
-	end)
+	if (mod._clock or 0) - at > SENT_TTL then
+		_sent[text] = nil
+		return false
+	end
+	return true
+end
+
+local _own_self, _own_channel
+
+local function _own_name()
+	local channel_name = _own_self:_channel_name(_own_channel.tag, false, _own_channel.channel_name)
+	return Localize("loc_chat_own_player", true, { channel_name = channel_name })
+end
+
+local function is_own(self, sender, channel)
+	if not sender or not channel or not channel.tag or not Localize then
+		return false
+	end
+	_own_self, _own_channel = self, channel
+	local ok, own = pcall(_own_name)
 	return ok and own == sender
 end
 
@@ -181,6 +220,14 @@ function mod._on_incoming(chat_element, text, log_index, channel_tag, sender, ch
 	end
 
 	if mod._com_wheel_filter and mod._com_wheel_filter[text] then
+		return
+	end
+
+	if outgoing.is_ignorable(text) then
+		return
+	end
+
+	if was_sent_by_us(text) then
 		return
 	end
 
@@ -284,6 +331,46 @@ function mod._flush_offline_pending()
 	end
 end
 
+local function poll_offline()
+	for _ = 1, 8 do
+		local id, src_iso, txt, status = translator.poll()
+		if not id then
+			break
+		end
+
+		local p = mod._pending[id]
+		mod._pending[id] = nil
+
+		if p then
+			if p.outgoing then
+				if status == 1 and txt and txt ~= "" then
+					outgoing.deliver(p.outgoing, txt)
+				elseif status == 2 then
+					outgoing.deliver(p.outgoing, nil, outgoing.REASON.NOOP)
+				else
+					outgoing.deliver(p.outgoing, nil, outgoing.REASON.FAILED)
+				end
+			elseif p.test then
+				if status == 1 and txt and txt ~= "" then
+					mod:echo(chat_inject.format(txt, src_iso))
+				elseif status == 2 then
+					mod:echo(string_format("detected %q, skipped (%s)", src_iso or "?", (txt ~= "" and txt) or "same language / unmapped"))
+				elseif status == -1 then
+					mod:echo("translation error")
+				end
+			elseif status == 1 and txt and txt ~= "" then
+				local tag = string_upper(src_iso or "")
+				chat_inject.append(p.element, p.idx, p.text, txt, tag)
+				cache_put(p.text, txt, tag)
+			elseif status == 2 or status == -1 then
+				cache_put(p.text, nil, nil)
+			elseif status == 1 then
+				cache_put(p.text, nil, nil)
+			end
+		end
+	end
+end
+
 local function prune_offline_pending(now)
 	for id, p in pairs(mod._pending) do
 		if type(p) == "table" and p.at and (now - p.at) > 15 then
@@ -326,45 +413,11 @@ function mod.update(dt)
 			mod._flush_offline_pending()
 		end
 
-		pcall(function()
-			for _ = 1, 8 do
-				local id, src_iso, txt, status = translator.poll()
-				if not id then
-					break
-				end
-
-				local p = mod._pending[id]
-				mod._pending[id] = nil
-
-				if p then
-					if p.outgoing then
-						if status == 1 and txt and txt ~= "" then
-							outgoing.deliver(p.outgoing, txt)
-						elseif status == 2 then
-							outgoing.deliver(p.outgoing, nil, outgoing.REASON.NOOP)
-						else
-							outgoing.deliver(p.outgoing, nil, outgoing.REASON.FAILED)
-						end
-					elseif p.test then
-						if status == 1 and txt and txt ~= "" then
-							mod:echo(chat_inject.format(txt, src_iso))
-						elseif status == 2 then
-							mod:echo(string.format("detected %q, skipped (%s)", src_iso or "?", (txt ~= "" and txt) or "same language / unmapped"))
-						elseif status == -1 then
-							mod:echo("translation error")
-						end
-					elseif status == 1 and txt and txt ~= "" then
-						local tag = string_upper(src_iso or "")
-						chat_inject.append(p.element, p.idx, p.text, txt, tag)
-						cache_put(p.text, txt, tag)
-					elseif status == 2 or status == -1 then
-						cache_put(p.text, nil, nil)
-					elseif status == 1 then
-						cache_put(p.text, nil, nil)
-					end
-				end
-			end
-		end)
+		local poll_ok, poll_err = pcall(poll_offline)
+		if not poll_ok and not mod._logged_poll_err then
+			mod._logged_poll_err = true
+			mod:warning("Lingua Imperialis: offline poll error: %s", tostring(poll_err))
+		end
 	end
 
 	-- ── ONLINE driver: runs only while the online engine is selected. ───────

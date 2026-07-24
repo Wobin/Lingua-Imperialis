@@ -11,6 +11,7 @@ local mod = get_mod("Lingua Imperialis")
 local progress_hud = mod:io_dofile("Lingua Imperialis/scripts/mods/Lingua Imperialis/modules/progress_hud")
 
 local math_floor = math.floor
+local string_format = string.format
 
 -- ─────────────────────────────────────────────────────────────
 -- Pinned release constants (two mutually-exclusive models)
@@ -575,13 +576,7 @@ end
 local VERIFY_TIMEOUT = 120
 local DOWNLOAD_STALL_TIMEOUT = 90
 
-function M.tick(now)
-    if not _active then
-        return
-    end
-    now = now or 0
-
-    local ok, err = pcall(function()
+local function tick_body(now)
         local a = _active
 
         -- ── Verify phase: poll the DLL's worker-thread SHA-256 ────────────────
@@ -646,16 +641,27 @@ function M.tick(now)
                 fail(which, a.on_done)
                 return
             end
-            local done = completed_before(which, a.file_index) + (bytes or 0)
-            local model_total = model_total_size(which)
+            local model_total = a.model_total
+            if not model_total then
+                model_total = model_total_size(which)
+                a.model_total = model_total
+                a.base_bytes = completed_before(which, a.file_index)
+                a.total_mb = math_floor(model_total / 1048576 + 0.5)
+            end
+
+            local done = a.base_bytes + (bytes or 0)
             local pct = 0
             if model_total > 0 then
                 pct = math_floor((done / model_total) * 100)
                 if pct < 0 then pct = 0 elseif pct > 100 then pct = 100 end
             end
             local done_mb = math_floor(done / 1048576 + 0.5)
-            local total_mb = math_floor(model_total / 1048576 + 0.5)
-            progress_hud.set(("%s %3d%% (%4d/%4d MB)"):format(a.label, pct, done_mb, total_mb))
+
+            if pct ~= a.last_pct or done_mb ~= a.last_mb then
+                a.last_pct = pct
+                a.last_mb = done_mb
+                progress_hud.set(string_format("%s %3d%% (%4d/%4d MB)", a.label, pct, done_mb, a.total_mb))
+            end
             return
         end
 
@@ -691,8 +697,14 @@ function M.tick(now)
             return
         end
         fail(which, a.on_done)
-    end)
+end
 
+function M.tick(now)
+    if not _active then
+        return
+    end
+
+    local ok, err = pcall(tick_body, now or 0)
     if not ok then
         mod:warning("Lingua Imperialis: model_fetch.tick error: %s", tostring(err))
         local a = _active
